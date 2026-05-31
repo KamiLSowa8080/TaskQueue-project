@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TaskQueue.API/TaskQueue.API.csproj" />
+  <Project Path="TaskQueue.Core/TaskQueue.Core.csproj" />
+  <Project Path="TaskQueue.Infrastructure/TaskQueue.Infrastructure.csproj" />
+  <Project Path="TaskQueue.Worker/TaskQueue.Worker.csproj" />
+</Solution>

@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Queue Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: "Segoe UI", system-ui, sans-serif;
+            background: #10131a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        header {
+            background: #181c27;
+            border-bottom: 1px solid #303647;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 { font-size: 1.25rem; font-weight: 600; }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ef4444;
+        }
+        .status-dot.connected { background: #22c55e; }
+        .last-update {
+            margin-left: auto;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        .container {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: #181c27;
+            border: 1px solid #303647;
+            border-radius: 8px;
+            padding: 1.25rem;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 2.25rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+        }
+        .total .stat-value { color: #60a5fa; }
+        .pending .stat-value { color: #f59e0b; }
+        .running .stat-value { color: #a78bfa; }
+        .done .stat-value { color: #22c55e; }
+        .failed .stat-value { color: #ef4444; }
+        .retrying .stat-value { color: #fb923c; }
+        .rate .stat-value { color: #34d399; font-size: 1.8rem; }
+        .panel {
+            background: #181c27;
+            border: 1px solid #303647;
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #cbd5e1;
+        }
+        .form-row {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .form-group label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+        input, select, textarea {
+            background: #10131a;
+            border: 1px solid #303647;
+            border-radius: 8px;
+            color: #e2e8f0;
+            padding: 0.6rem 0.9rem;
+            font-size: 0.9rem;
+            outline: none;
+        }
+        input:focus, select:focus, textarea:focus { border-color: #60a5fa; }
+        input[type="number"] { width: 90px; }
+        textarea {
+            min-height: 70px;
+            width: 320px;
+            resize: vertical;
+            font-family: Consolas, monospace;
+            font-size: 0.85rem;
+        }
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.6rem 1.2rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        button:hover { background: #2563eb; }
+        button.danger { background: #ef4444; }
+        button.danger:hover { background: #dc2626; }
+        .toolbar {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .secondary {
+            background: #202638;
+            border: 1px solid #303647;
+        }
+        .secondary:hover { background: #293044; }
+        .table-wrapper { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: #94a3b8;
+            border-bottom: 1px solid #303647;
+        }
+        td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid #252b3c;
+            vertical-align: middle;
+        }
+        tr:hover td { background: #202638; }
+        .badge {
+            display: inline-flex;
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .badge.Pending { background: #451a03; color: #fbbf24; }
+        .badge.Processing { background: #2e1065; color: #c4b5fd; }
+        .badge.Completed { background: #052e16; color: #4ade80; }
+        .badge.Failed { background: #450a0a; color: #f87171; }
+        .badge.Retrying { background: #431407; color: #fb923c; }
+        .job-id {
+            font-family: Consolas, monospace;
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+        .priority-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .priority-fill {
+            height: 6px;
+            border-radius: 3px;
+            background: #3b82f6;
+            min-width: 4px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #64748b;
+        }
+        #toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #181c27;
+            border: 1px solid #303647;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            font-size: 0.875rem;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.2s;
+            pointer-events: none;
+            z-index: 999;
+        }
+        #toast.show { opacity: 1; transform: translateY(0); }
+        #toast.success { border-color: #22c55e; color: #4ade80; }
+        #toast.error { border-color: #ef4444; color: #f87171; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="status-dot" id="statusDot"></div>
+    <h1>Task Queue Dashboard</h1>
+    <span class="last-update" id="lastUpdate"></span>
+</header>
+
+<main class="container">
+    <section class="stats-grid">
+        <div class="stat-card total"><div class="stat-value" id="s-total">0</div><div class="stat-label">Total</div></div>
+        <div class="stat-card pending"><div class="stat-value" id="s-pending">0</div><div class="stat-label">Pending</div></div>
+        <div class="stat-card running"><div class="stat-value" id="s-processing">0</div><div class="stat-label">Processing</div></div>
+        <div class="stat-card done"><div class="stat-value" id="s-completed">0</div><div class="stat-label">Completed</div></div>
+        <div class="stat-card failed"><div class="stat-value" id="s-failed">0</div><div class="stat-label">Failed</div></div>
+        <div class="stat-card retrying"><div class="stat-value" id="s-retrying">0</div><div class="stat-label">Retrying</div></div>
+        <div class="stat-card rate"><div class="stat-value" id="s-rate">0%</div><div class="stat-label">Success rate</div></div>
+    </section>
+
+    <section class="panel">
+        <h2>Nowe zadanie</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="jobType">Typ</label>
+                <select id="jobType">
+                    <option value="SendEmail">SendEmail</option>
+                    <option value="GenerateReport">GenerateReport</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="jobPriority">Priorytet</label>
+                <input type="number" id="jobPriority" value="5" min="0" max="20">
+            </div>
+            <div class="form-group">
+                <label for="jobRetries">Max retries</label>
+                <input type="number" id="jobRetries" value="3" min="0" max="10">
+            </div>
+            <div class="form-group">
+                <label for="jobPayload">Payload JSON</label>
+                <textarea id="jobPayload">{"to":"user@example.com","subject":"Hello"}</textarea>
+            </div>
+            <button onclick="createJob()">Dodaj zadanie</button>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Zadania</h2>
+        <div class="toolbar">
+            <select id="filterStatus" onchange="renderJobs()">
+                <option value="">Wszystkie statusy</option>
+                <option value="Pending">Pending</option>
+                <option value="Processing">Processing</option>
+                <option value="Completed">Completed</option>
+                <option value="Failed">Failed</option>
+                <option value="Retrying">Retrying</option>
+            </select>
+            <button class="secondary" onclick="loadJobs()">Odśwież</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Typ</th>
+                    <th>Status</th>
+                    <th>Priorytet</th>
+                    <th>Retry</th>
+                    <th>Utworzono</th>
+                    <th>Ukończono</th>
+                    <th>Błąd</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody id="jobsBody">
+                <tr><td colspan="9"><div class="empty-state">Ładowanie...</div></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+    let allJobs = [];
+    let connection;
+
+    async function connectSignalR() {
+        connection = new signalR.HubConnectionBuilder()
+            .withUrl('/hubs/jobs')
+            .withAutomaticReconnect([1000, 2000, 5000, 10000])
+            .build();
+
+        connection.on('StatsUpdated', updateStats);
+        connection.on('JobListUpdated', job => {
+            upsertJob(job);
+            renderJobs();
+        });
+        connection.on('JobUpdated', job => {
+            upsertJob(job);
+            renderJobs();
+        });
+
+        connection.onreconnecting(() => setConnectionState(false));
+        connection.onreconnected(() => {
+            setConnectionState(true);
+            loadJobs();
+        });
+        connection.onclose(() => setConnectionState(false));
+
+        try {
+            await connection.start();
+            setConnectionState(true);
+        } catch {
+            setConnectionState(false);
+            setTimeout(connectSignalR, 5000);
+        }
+    }
+
+    function setConnectionState(connected) {
+        document.getElementById('statusDot').classList.toggle('connected', connected);
+    }
+
+    function updateStats(stats) {
+        document.getElementById('s-total').textContent = stats.totalJobs;
+        document.getElementById('s-pending').textContent = stats.pendingJobs;
+        document.getElementById('s-processing').textContent = stats.processingJobs;
+        document.getElementById('s-completed').textContent = stats.completedJobs;
+        document.getElementById('s-failed').textContent = stats.failedJobs;
+        document.getElementById('s-retrying').textContent = stats.retryingJobs;
+        document.getElementById('s-rate').textContent = `${stats.successRatePercent}%`;
+        document.getElementById('lastUpdate').textContent =
+            `Aktualizacja: ${new Date().toLocaleTimeString('pl-PL')}`;
+
+        loadJobs(false);
+    }
+
+    async function loadJobs(showError = true) {
+        try {
+            const response = await fetch('/api/jobs');
+            allJobs = await response.json();
+            renderJobs();
+        } catch {
+            if (showError) showToast('Błąd ładowania zadań', 'error');
+        }
+    }
+
+    function upsertJob(job) {
+        const index = allJobs.findIndex(existing => existing.id === job.id);
+        if (index >= 0) allJobs[index] = job;
+        else allJobs.unshift(job);
+    }
+
+    function renderJobs() {
+        const status = document.getElementById('filterStatus').value;
+        const jobs = status ? allJobs.filter(job => job.status === status) : allJobs;
+        const tbody = document.getElementById('jobsBody');
+
+        if (!jobs.length) {
+            tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state">Brak zadań</div></td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = jobs.map(job => `
+            <tr>
+                <td class="job-id" title="${escapeHtml(job.id)}">${escapeHtml(job.id.substring(0, 8))}</td>
+                <td>${escapeHtml(job.type)}</td>
+                <td><span class="badge ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td>
+                <td>
+                    <div class="priority-bar">
+                        <div class="priority-fill" style="width:${Math.max(job.priority * 5, 4)}px"></div>
+                        ${job.priority}
+                    </div>
+                </td>
+                <td>${job.retryCount}</td>
+                <td>${formatDate(job.createdAt)}</td>
+                <td>${job.completedAt ? formatDate(job.completedAt) : '-'}</td>
+                <td title="${escapeHtml(job.errorMessage || '')}">${escapeHtml(job.errorMessage || '')}</td>
+                <td>
+                    ${job.status === 'Pending'
+                        ? `<button class="danger" onclick="cancelJob('${job.id}')">Anuluj</button>`
+                        : ''}
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    async function createJob() {
+        const request = {
+            type: document.getElementById('jobType').value,
+            payload: document.getElementById('jobPayload').value,
+            priority: parseInt(document.getElementById('jobPriority').value, 10),
+            maxRetries: parseInt(document.getElementById('jobRetries').value, 10)
+        };
+
+        try {
+            JSON.parse(request.payload);
+        } catch {
+            showToast('Payload musi być poprawnym JSON', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request)
+            });
+
+            if (!response.ok) {
+                showToast('Błąd tworzenia zadania', 'error');
+                return;
+            }
+
+            const job = await response.json();
+            upsertJob(job);
+            renderJobs();
+            showToast(`Dodano zadanie ${job.id.substring(0, 8)}`, 'success');
+        } catch {
+            showToast('Brak połączenia z API', 'error');
+        }
+    }
+
+    async function cancelJob(id) {
+        if (!confirm('Anulować to zadanie?')) return;
+
+        try {
+            const response = await fetch(`/api/jobs/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                showToast('Zadanie anulowane', 'success');
+                await loadJobs(false);
+            } else {
+                showToast('Nie można anulować zadania', 'error');
+            }
+        } catch {
+            showToast('Błąd anulowania zadania', 'error');
+        }
+    }
+
+    function formatDate(value) {
+        if (!value) return '-';
+        return new Date(value).toLocaleString('pl-PL', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+
+    function showToast(message, type = 'success') {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        toast.className = `show ${type}`;
+        setTimeout(() => toast.className = '', 3000);
+    }
+
+    function escapeHtml(value) {
+        return String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    connectSignalR();
+    loadJobs();
+</script>
+</body>
+</html>
